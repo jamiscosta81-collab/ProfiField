@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>ProfiField v1.0 — James Costa Especialista</title>
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.25/jspdf.plugin.autotable.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@400;700&display=swap" rel="stylesheet">
+
+    <style>
+        :root {
+            --s-blue: #006487; --s-dark: #004b66; --s-teal: #009999;
+            --bg: #DCE1E3; --panel: #FFFFFF; --metal: #A9B4BE;
+            --ok: #27AE60; --warn: #F1C40F; --crit: #C0392B;
+            --mono: 'IBM Plex Mono', monospace;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'IBM Plex Sans', sans-serif; }
+        body { background: var(--bg); height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+
+        .header { height: 52px; background: var(--s-blue); border-bottom: 4px solid var(--s-dark); color: white; display: flex; align-items: center; padding: 0 15px; font-weight: bold; letter-spacing: 1px; box-shadow: 0 2px 5px rgba(0,0,0,0.2); }
+        
+        .tabs { background: #2D3748; display: flex; overflow-x: auto; gap: 2px; }
+        .tab { padding: 12px 18px; color: #A0AEC0; font-size: 11px; cursor: pointer; text-transform: uppercase; font-weight: 700; border-bottom: 3px solid transparent; white-space: nowrap; }
+        .tab.active { color: white; border-bottom-color: var(--s-teal); background: rgba(255,255,255,0.05); }
+
+        .panel { flex: 1; padding: 12px; overflow-y: auto; display: none; }
+        .panel.active { display: block; }
+        
+        .card { background: var(--panel); border: 1px solid var(--metal); border-left: 6px solid var(--s-blue); padding: 15px; margin-bottom: 12px; border-radius: 2px; box-shadow: 2px 2px 5px rgba(0,0,0,0.05); }
+        .card-title { font-family: var(--mono); font-size: 12px; color: var(--s-blue); font-weight: 700; margin-bottom: 12px; border-bottom: 1px solid #eee; padding-bottom: 6px; text-transform: uppercase; }
+
+        canvas { background: #0a0f0d; width: 100%; height: 200px; border: 2px solid #333; border-radius: 2px; display: block; }
+
+        .grid-fail { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+        .btn-fail { padding: 12px; border: 1px solid var(--metal); border-radius: 2px; font-size: 11px; font-weight: bold; cursor: pointer; background: #fff; }
+        
+        .status-box { background: #f1f3f5; padding: 12px; border-radius: 2px; font-size: 13px; border-left: 4px solid var(--metal); line-height: 1.5; }
+        .val { font-family: var(--mono); font-weight: bold; color: var(--s-blue); }
+
+        .calc-input { width: 100%; padding: 10px; border: 1px solid var(--metal); border-radius: 2px; margin-top: 5px; font-family: var(--mono); }
+        .btn-pdf { width: 100%; padding: 15px; background: var(--s-blue); color: white; border: none; font-weight: bold; cursor: pointer; text-transform: uppercase; margin-top: 10px; }
+    </style>
+</head>
+<body>
+
+<div class="header">⚡ PROFIFIELD v1.0 — INDUSTRIAL DIAGNOSTIC</div>
+
+<div class="tabs">
+    <div class="tab active" onclick="openTab(event, 'diag')">Diagnóstico</div>
+    <div class="tab" onclick="openTab(event, 'scope')">ScopeView</div>
+    <div class="tab" onclick="openTab(event, 'calc')">Calculadora</div>
+    <div class="tab" onclick="openTab(event, 'report')">Relatório</div>
+</div>
+
+<div id="diag" class="panel active">
+    <div class="card">
+        <div class="card-title">🧪 Simulador de Falhas de Campo</div>
+        <div class="grid-fail">
+            <button class="btn-fail" onclick="setFault('ok')" style="color: var(--ok)">🟢 REDE OK</button>
+            <button class="btn-fail" onclick="setFault('term')" style="color: var(--warn)">⚠️ S/ TERMINADOR</button>
+            <button class="btn-fail" onclick="setFault('umid')" style="color: #3182ce">💧 UMIDADE / JB</button>
+            <button class="btn-fail" onclick="setFault('curto')" style="color: var(--crit)">🚫 CURTO PARCIAL</button>
+        </div>
+    </div>
+    <div class="card">
+        <div class="card-title">🔍 Parecer Técnico (Causa e Ação)</div>
+        <div class="status-box" id="causa-acao">Selecione uma simulação para iniciar a análise técnica...</div>
+    </div>
+</div>
+
+<div id="scope" class="panel">
+    <div class="card">
+        <div class="card-title">📊 Osciloscópio Digital MBP</div>
+        <canvas id="scopeCanvas"></canvas>
+        <div style="display: flex; justify-content: space-between; margin-top: 12px; font-size: 13px;">
+            <span>VDC: <span class="val" id="disp-vdc">19.5V</span></span>
+            <span>VAC: <span class="val" id="disp-vac">850mV</span></span>
+            <span>Jitter: <span class="val" id="disp-jit">0.3μs</span></span>
+        </div>
+    </div>
+</div>
+
+<div id="calc" class="panel">
+    <div class="card">
+        <div class="card-title">🧮 Cálculo de Carga do Barramento</div>
+        <label style="font-size: 11px;">Capacidade do Acoplador (mA)</label>
+        <input type="number" id="in-cap" value="500" class="calc-input" oninput="doCalc()">
+        <label style="font-size: 11px; margin-top: 10px; display: block;">Qtd. de Instrumentos</label>
+        <input type="number" id="in-qtd" value="12" class="calc-input" oninput="doCalc()">
+        <div id="calc-res" style="margin-top: 15px; font-weight: bold; padding: 10px; background: #f0fdf4; color: var(--ok); border-radius: 2px;">
+            Consumo Estimado: 200mA (Margem: 60%)
+        </div>
+    </div>
+</div>
+
+<div id="report" class="panel">
+    <div class="card">
+        <div class="card-title">📄 Certificação de Rede (As-Built)</div>
+        <p style="font-size: 12px; color: #666; margin-bottom: 10px;">Gera um laudo oficial em PDF com os dados atuais da rede.</p>
+        <button class="btn-pdf" onclick="gerarPDF()">Gerar Laudo PDF Oficial</button>
+    </div>
+</div>
+
+<script>
+    let state = { vdc: 19.5, vac: 850, jit: 0.3, type: 'ok', c: "Normal", a: "Rede em conformidade." };
+
+    function openTab(e, id) {
+        document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+        document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+        document.getElementById(id).classList.add('active');
+        if(e) e.currentTarget.classList.add('active');
+    }
+
+    function setFault(f) {
+        if(f=='ok') state = { vdc:19.5, vac:850, jit:0.3, type:'ok', c:"Rede Certificada (Norma IEC 61158-2)", a:"Nenhuma ação imediata. Manter plano de preventiva." };
+        if(f=='term') state = { vdc:19.1, vac:1450, jit:1.2, type:'term', c:"Falta de Terminador Ativo", a:"Instalar terminador de 100Ω no final do tronco (Trunk)." };
+        if(f=='umid') state = { vdc:16.5, vac:420, jit:3.5, type:'umid', c:"Atenuação por Umidade/Capacitância", a:"Inspecionar JBs, secar bornes e validar isolação do cabo." };
+        if(f=='curto') state = { vdc:10.2, vac:190, jit:0.9, type:'curto', c:"Curto Parcial ou Fuga de Corrente", a:"Localizar trecho com baixa isolação entre fios (+ / -)." };
+
+        document.getElementById('causa-acao').innerHTML = `<b>CAUSA:</b> ${state.c}<br><br><b>AÇÃO:</b> ${state.a}`;
+        document.getElementById('disp-vdc').innerText = state.vdc + 'V';
+        document.getElementById('disp-vac').innerText = state.vac + 'mV';
+        document.getElementById('disp-jit').innerText = state.jit + 'μs';
+    }
+
+    function doCalc() {
+        let cap = document.getElementById('in-cap').value;
+        let qtd = document.getElementById('in-qtd').value;
+        let consumo = (qtd * 15) + 20;
+        let margem = ((cap - consumo) / cap) * 100;
+        let res = document.getElementById('calc-res');
+        res.innerHTML = `Consumo Estimado: ${consumo}mA (Margem: ${margem.toFixed(0)}%)`;
+        res.style.color = (margem < 20) ? "var(--crit)" : "var(--ok)";
+        res.style.background = (margem < 20) ? "#fff5f5" : "#f0fdf4";
+    }
+
+    const canvas = document.getElementById('scopeCanvas');
+    const ctx = canvas.getContext('2d');
+    function draw() {
+        ctx.fillStyle = "#0a0f0d"; ctx.fillRect(0,0,canvas.width, canvas.height);
+        ctx.strokeStyle = "#00ffcc"; ctx.lineWidth = 2; ctx.beginPath();
+        let amp = state.vac / 14;
+        for(let i=0; i<canvas.width; i++){
+            let noise = (Math.random()-0.5) * (state.type=='umid' ? 12 : 5);
+            let y = 100 + Math.sin(i*0.08) * amp;
+            if(state.type=='term' && i%40 > 30) y -= 30; // Reflexão
+            if(state.type=='umid') y = 100 + (Math.sin(i*0.08)*amp*0.4); // Deformação
+            ctx.lineTo(i, y + noise);
+        }
+        ctx.stroke();
+        requestAnimationFrame(draw);
+    }
+    draw();
+
+    function gerarPDF() {
+        const { jsPDF } = window.jspdf;
+        const doc = new jsPDF();
+        doc.setFillColor(0, 100, 135); doc.rect(0, 0, 210, 25, 'F');
+        doc.setTextColor(255, 255, 255); doc.setFontSize(16); doc.text("PROFIFIELD - LAUDO DE CERTIFICAÇÃO PA", 15, 16);
+        doc.setTextColor(0, 0, 0); doc.setFontSize(10);
+        doc.text(`Técnico: James Costa`, 15, 35);
+        doc.text(`Data: ${new Date().toLocaleDateString()}`, 160, 35);
+        
+        doc.autoTable({
+            startY: 45,
+            head: [['Parâmetro', 'Valor Medido', 'Status']],
+            body: [
+                ['Tensão Barramento', state.vdc + 'V', 'OK'],
+                ['Amplitude de Sinal', state.vac + 'mV', (state.vac < 750 || state.vac > 1000) ? 'FALHA' : 'OK'],
+                ['Jitter', state.jit + 'us', (state.jit > 1.6) ? 'ALERTA' : 'OK']
+            ]
+        });
+
+        doc.setFontSize(11); doc.text("PARECER TÉCNICO:", 15, doc.lastAutoTable.finalY + 15);
+        doc.setFont("helvetica", "italic"); doc.text(`Causa: ${state.c}`, 15, doc.lastAutoTable.finalY + 22);
+        doc.text(`Ação: ${state.a}`, 15, doc.lastAutoTable.finalY + 29);
+        doc.save("Laudo_Tecnico_PA.pdf");
+    }
+</script>
+</body>
+</html>
