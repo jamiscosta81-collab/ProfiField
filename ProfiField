@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>ProfiField v1.0 — Diagnóstico Especialista PA</title>
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.25/jspdf.plugin.autotable.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@400;700&display=swap" rel="stylesheet">
+
+    <style>
+        :root {
+            --s-blue: #006487; --s-dark: #004b66; --s-teal: #009999;
+            --bg: #DCE1E3; --panel: #FFFFFF; --metal: #A9B4BE;
+            --ok: #27AE60; --warn: #F1C40F; --crit: #C0392B;
+            --mono: 'IBM Plex Mono', monospace;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'IBM Plex Sans', sans-serif; }
+        body { background: var(--bg); height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+
+        /* HEADER SIEMENS STYLE */
+        .header { height: 52px; background: var(--s-blue); border-bottom: 4px solid var(--s-dark); color: white; display: flex; align-items: center; padding: 0 15px; font-weight: bold; letter-spacing: 1px; box-shadow: 0 2px 5px rgba(0,0,0,0.2); }
+        
+        /* NAVEGAÇÃO POR ABAS */
+        .tabs { background: #2D3748; display: flex; overflow-x: auto; gap: 2px; }
+        .tab { padding: 12px 18px; color: #A0AEC0; font-size: 11px; cursor: pointer; text-transform: uppercase; font-weight: 700; border-bottom: 3px solid transparent; white-space: nowrap; }
+        .tab.active { color: white; border-bottom-color: var(--s-teal); background: rgba(255,255,255,0.05); }
+
+        /* PAINEIS */
+        .panel { flex: 1; padding: 12px; overflow-y: auto; display: none; }
+        .panel.active { display: block; }
+        
+        /* CARDS INDUSTRIAIS */
+        .card { background: var(--panel); border: 1px solid var(--metal); border-left: 6px solid var(--s-blue); padding: 15px; margin-bottom: 12px; border-radius: 2px; box-shadow: 2px 2px 5px rgba(0,0,0,0.05); }
+        .card-title { font-family: var(--mono); font-size: 12px; color: var(--s-blue); font-weight: 700; margin-bottom: 12px; border-bottom: 1px solid #eee; padding-bottom: 6px; text-transform: uppercase; }
+
+        /* SCOPEVIEW CANVAS */
+        .scope-container { background: #0a0f0d; border: 2px solid #333; position: relative; border-radius: 2px; }
+        canvas { display: block; width: 100%; height: 200px; }
+
+        /* BOTÕES DE FALHA */
+        .grid-fail { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+        .btn-fail { padding: 10px; border: 1px solid var(--metal); border-radius: 2px; font-size: 11px; font-weight: bold; cursor: pointer; background: #fff; transition: 0.2s; }
+        .btn-fail:active { transform: scale(0.96); }
+
+        /* STATUS BOX */
+        .status-box { background: #f1f3f5; padding: 12px; border-radius: 2px; font-size: 13px; border-left: 4px solid var(--metal); }
+        .val { font-family: var(--mono); font-weight: bold; color: var(--s-blue); }
+
+        /* CALCULADORA */
+        .calc-input { width: 100%; padding: 8px; border: 1px solid var(--metal); border-radius: 2px; margin-top: 5px; font-family: var(--mono); }
+
+        /* RELATÓRIO */
+        .btn-pdf { width: 100%; padding: 15px; background: var(--s-blue); color: white; border: none; font-weight: bold; cursor: pointer; text-transform: uppercase; }
+    </style>
+</head>
+<body>
+
+<div class="header">⚡ PROFIFIELD v1.0 — INDUSTRIAL DIAGNOSTIC</div>
+
+<div class="tabs">
+    <div class="tab active" onclick="openTab(event, 'diag')">Diagnóstico</div>
+    <div class="tab" onclick="openTab(event, 'scope')">ScopeView</div>
+    <div class="tab" onclick="openTab(event, 'calc')">Calculadora</div>
+    <div class="tab" onclick="openTab(event, 'report')">Relatório</div>
+</div>
+
+<div id="diag" class="panel active">
+    <div class="card">
+        <div class="card-title">🧪 Injetor de Falhas Técnicas</div>
+        <div class="grid-fail">
+            <button class="btn-fail" onclick="setFault('ok')" style="color: var(--ok)">🟢 Rede Saudável</button>
+            <button class="btn-fail" onclick="setFault('term')" style="color: var(--warn)">⚠️ Falta Terminador</button>
+            <button class="btn-fail" onclick="setFault('umid')" style="color: #3182ce">💧 Umidade / Jitter</button>
+            <button class="btn-fail" onclick="setFault('curto')" style="color: var(--crit)">🚫 Curto Parcial</button>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-title">🔍 Parecer Causa e Ação (Offline)</div>
+        <div class="status-box" id="causa-acao">Selecione uma falha para iniciar a análise...</div>
+    </div>
+</div>
+
+<div id="scope" class="panel">
+    <div class="card">
+        <div class="card-title">📊 Osciloscópio Digital (MBP)</div>
+        <div class="scope-container">
+            <canvas id="scopeCanvas"></canvas>
+        </div>
+        <div style="display: flex; justify-content: space-between; margin-top: 10px; font-size: 12px;">
+            <span>VDC: <span class="val" id="disp-vdc">19.5V</span></span>
+            <span>VAC: <span class="val" id="disp-vac">850mV</span></span>
+            <span>Jitter: <span class="val" id="disp-jit">0.3μs</span></span>
+        </div>
+    </div>
+</div>
+
+<div id="calc" class="panel">
+    <div class="card">
+        <div class="card-title">🧮 Cálculo de Carga do Barramento</div>
+        <label style="font-size: 11px;">Capacidade Acoplador (mA)</label>
+        <input type="number" id="in-cap" value="500" class="calc-input">
+        <label style="font-size: 11px; margin-top: 10px; display: block;">Qtd. Instrumentos</label>
+        <input type="number" id="in-qtd" value="12" class="calc-input">
+        <div id="calc-res" style="margin-top: 15px; font-weight: bold; color: var(--ok);">Consumo OK: 200mA (Margem 60%)</div>
+    </div>
+</div>
+
+<div id="report" class="panel">
+    <div class="card">
+        <div class="card-title">📄 Emissão de Laudo Certificado</div>
+        <button class="btn-pdf" onclick="gerarRelatorio()">Gerar PDF Oficial (As-Built)</button>
+    </div>
+</div>
+
+<script>
+    let state = { vdc: 19.5, vac: 850, jit: 0.3, type: 'ok', c: "Normal", a: "Rede em conformidade." };
+
+    function openTab(e, id) {
+        document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+        document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+        document.getElementById(id).classList.add('active');
+        e.currentTarget.classList.add('active');
+    }
+
+    function setFault(f) {
+        if(f=='ok') state = { vdc:19.5, vac:850, jit:0.3, type:'ok', c:"Rede Certificada", a:"Nenhuma. Manter plano de manutenção preventiva." };
+        if(f=='term') state = { vdc:19.1, vac:1420, jit:1.1, type:'term', c:"Falta de Terminador", a:"Instalar terminador ativo de 100Ω no fim do tronco principal." };
+        if(f=='umid') state = { vdc:16.8, vac:450, jit:3.8, type:'umid', c:"Umidade/Capacitância", a:"Inspecionar bornes da JB e verificar integridade do cabo (Tipo A)." };
+        if(f=='curto') state = { vdc:10.2, vac:210, jit:0.9, type:'curto', c:"Curto Parcial/Fuga", a:"Revisar isolação da blindagem e carga total do segmento." };
+
+        document.getElementById('causa-acao').innerHTML = `<b>CAUSA:</b> ${state.c}<br><br><b>AÇÃO:</b> ${state.a}`;
+        document.getElementById('disp-vdc').innerText = state.vdc + 'V';
+        document.getElementById('disp-vac').innerText = state.vac + 'mV';
+        document.getElementById('disp-jit').innerText = state.jit + 'μs';
+    }
+
+    // ENGINE DO OSCILOSCÓPIO
+    const canvas = document.getElementById('scopeCanvas');
+    const ctx = canvas.getContext('2d');
+    function animate() {
+        ctx.fillStyle = "#0a0f0d"; ctx.fillRect(0,0,canvas.width, canvas.height);
+        ctx.strokeStyle = "#00ffcc"; ctx.lineWidth = 2; ctx.beginPath();
+        let amp = state.vac / 12;
+        for(let i=0; i<canvas.width; i++){
+            let noise = (Math.random()-0.5) * (state.type=='umid' ? 12 : 4);
+            let y = 75 + Math.sin(i*0.06) * amp;
+            if(state.type=='term' && i%30 > 25) y -= 20; // Reflexão (Overshoot)
+            if(state.type=='umid') y = 75 + (Math.sin(i*0.06)*amp*0.5); // Atenuação
+            ctx.lineTo(i, y + noise);
+        }
+        ctx.stroke();
+        requestAnimationFrame(animate);
+    }
+    animate();
+
+    function gerarRelatorio() {
+        const { jsPDF } = window.jspdf;
+        const doc = new jsPDF();
+        doc.setFontSize(18); doc.setTextColor(0, 100, 135);
+        doc.text("CERTIFICADO DE REDE PROFIBUS PA", 15, 20);
+        doc.setFontSize(12); doc.setTextColor(0,0,0);
+        doc.text(`Técnico: James Costa`, 15, 35);
+        doc.text(`Data: ${new Date().toLocaleDateString()}`, 15, 42);
+        doc.text(`Causa Detectada: ${state.c}`, 15, 55);
+        doc.text(`Ação Recomendada: ${state.a}`, 15, 62);
+        doc.save(`Laudo_PA_${state.type}.pdf`);
+    }
+</script>
+</body>
+</html>
